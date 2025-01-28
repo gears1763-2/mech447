@@ -1,0 +1,15 @@
+[project]
+name = "mech447"
+version = "1"
+authors = [
+  { name="Anthony Truelove" },
+]
+description = "A utility package for the MECH 447/542 - Energy Systems course, as taught at UVic in the winter term of 2025"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "3-Clause BSD"
+license-files = ["LICEN[CS]E*"]
