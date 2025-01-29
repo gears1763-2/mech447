@@ -17,7 +17,7 @@ offered at the University of Victoria by Dr. Andrew Rowe.
 This project is packaged in a manner that is consistent (more or less) with
 the structure and layout defined in <https://packaging.python.org/en/latest/tutorials/packaging-projects/>.
 
-In this directory for this project, you should find this README, a LICENSE file,
+In the directory for this project, you should find this README, a LICENSE file,
 a bash script for generating the documentation (Linux, Mac), a batch file for
 generating the documentation (Windows), a project manifest (toml), and
 the following sub-directories:
