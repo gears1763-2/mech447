@@ -3,7 +3,7 @@
     Anthony Truelove MASc, P.Eng.
     Python Certified Professional Programmer (PCPP1)
 
-Copyright 2025 - Anthony Truelove
+Copyright 2025 - Anthony Truelove  
 SEE LICENSE TERMS [HERE](./LICENSE)
 
 This is a utility package for supporting instruction in MECH 447/542 as
