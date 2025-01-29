@@ -7,14 +7,20 @@
     forecasting given a deployment time series and unit price learning data.
 """
 
+# ==== IMPORTS ============================================================== #
 
+import os
 import sys
-sys.path.append("../")  # <-- just point to where the `mech447` package folder is (either relative or absolute path)
+sys.path.append("../")  # <-- just point to where the `mech447` package folder
+                        #     is (either relative or absolute path)
 
 import numpy as np
 
-import mech447.unitpriceforecaster as upf  # <-- this is importing from the `mech447` package
+import mech447.unitpriceforecaster as upf  # <-- this is importing from the
+                                           #     `mech447` package
 
+
+# ==== MODELLING INPUTS ===================================================== #
 
 #   1. construct cumulative deployment time series
 time_array_years = np.linspace(0, 100, 1000 * 100)
@@ -46,6 +52,9 @@ learning_array_price_per_unit = np.multiply(
     learning_array_price_per_unit
 )
 
+
+# ==== SET UP AND RUN MODEL ================================================= #
+
 #   3. construct unit price forecaster
 unit_price_forecaster = upf.UnitPriceForecaster(
     time_array_years,
@@ -58,4 +67,21 @@ unit_price_forecaster = upf.UnitPriceForecaster(
 
 #   4. run and plot results
 unit_price_forecaster.run()
-unit_price_forecaster.plot()
+unit_price_forecaster.plot(
+    show_flag=True,
+    save_flag=True,
+    save_path=""
+)
+
+
+# ==== CLEAN UP ============================================================= #
+
+#   5. clean up
+input("Press [enter] to clean up figures ...")
+
+for _, _, filename_list in os.walk(os.getcwd()):
+    pass
+
+for filename in filename_list:
+    if ".png" in filename:
+        os.remove(filename)

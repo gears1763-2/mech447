@@ -1,9 +1,11 @@
 """
-    Anthony Truelove MASc, P.Eng.  
-    Python Certified Professional Programmer (PCPP1)  
-    2025
+Anthony Truelove MASc, P.Eng.  
+Python Certified Professional Programmer (PCPP1)
 
-    A stocks and flows modelling class, as part of the `mech447` package.
+Copyright 2025 - Anthony Truelove  
+--> ***SEE LICENSE TERMS [HERE](../../LICENSE)*** <--
+
+A stocks and flows modelling class, as part of the `mech447` package.
 """
 
 
@@ -344,6 +346,7 @@ class StocksAndFlows:
 
         return
 
+
     def getDerivative(
         self,
         i : int
@@ -438,6 +441,7 @@ class StocksAndFlows:
 
         return
 
+
     def run(self) -> None:
         """
         Method to run model and populate state arrays.
@@ -497,13 +501,28 @@ class StocksAndFlows:
 
         return
 
-    def plot(self) -> None:
+
+    def plot(
+        self,
+        show_flag: bool = True,
+        save_flag: bool = False,
+        save_path: str = ""
+    ) -> None:
         """
         Method to plot state arrays.
 
         Parameters
         ----------
-        None
+        show_flag: bool, optional, default True
+            Flag which indicates whether or not to show the generated plots.
+
+        save_flag: bool, optional, default False
+            Flag which indicates whether or not to save the generated plots.
+
+        save_path: str, optional, default ""
+            Path (either relative or absolute) where the generated plots
+            should be saved. Defaults to the empty string, in which case the
+            plots will be saved to the current working directory.
 
         Returns
         -------
@@ -571,6 +590,19 @@ class StocksAndFlows:
         plt.legend()
         plt.tight_layout()
 
+        if save_flag:
+            fig_path = save_path + "flows.png"
+
+            plt.savefig(
+                fig_path,
+                format="png",
+                dpi=128
+            )
+
+            print(
+                "StocksAndFlows.plot():\tflows plot saved to",fig_path
+            )
+
         #   2. make stocks plot
         plt.figure(figsize=(8, 6))
         plt.grid(color="C7", alpha=0.5, which="both", zorder=1)
@@ -632,8 +664,22 @@ class StocksAndFlows:
         plt.legend()
         plt.tight_layout()
 
+        if save_flag:
+            fig_path = save_path + "stocks.png"
+
+            plt.savefig(
+                save_path + "stocks.png",
+                format="png",
+                dpi=128
+            )
+
+            print(
+                "StocksAndFlows.plot():\tstocks plot saved to",fig_path
+            )
+
         #   3. show
-        plt.show()
+        if show_flag:
+            plt.show()
 
         return
 

@@ -1,9 +1,11 @@
 """
-    Anthony Truelove MASc, P.Eng.  
-    Python Certified Professional Programmer (PCPP1)  
-    2025
+Anthony Truelove MASc, P.Eng.  
+Python Certified Professional Programmer (PCPP1)
 
-    A unit price forecaster class, as part of the `mech447` package.
+Copyright 2025 - Anthony Truelove  
+--> ***SEE LICENSE TERMS [HERE](../../LICENSE)*** <--
+
+A unit price forecaster class, as part of the `mech447` package.
 """
 
 
@@ -32,7 +34,7 @@ class UnitPriceForecaster:
     ) -> None:
         """
         UnitPriceForecaster class constructor.
-        
+
         Parameters
         ----------
         time_array_years: np.array
@@ -60,18 +62,17 @@ class UnitPriceForecaster:
 
         units_str: str, optional, default "MW"
             This is a string defining what the units are, for plotting.
-        
+
         regression_flag: bool, optional, default True
             A flag which indicates whether linear regression should be applied
             to the learning data (`True`), or if simple linear 
             interpolation/extrapolation should be applied instead (`False`).
-            
-        
+
         Returns
         -------
         None
         """
-        
+
         #   1. cast inputs to arrays
         self.time_array_years = np.array(time_array_years)
         """
@@ -163,7 +164,7 @@ class UnitPriceForecaster:
         
         return
 
-    
+
     def __checkInputs(
         self,
         deployment_array_units: np.array,
@@ -286,11 +287,11 @@ class UnitPriceForecaster:
     def run(self) -> None:
         """
         Method to run and populate state arrays.
-        
+
         Parameters
         ----------
         None
-        
+
         Returns
         -------
         None
@@ -315,14 +316,28 @@ class UnitPriceForecaster:
         return
 
 
-    def plot(self) -> None:
+    def plot(
+        self,
+        show_flag: bool = True,
+        save_flag: bool = False,
+        save_path: str = ""
+    ) -> None:
         """
         Method to plot state arrays.
-        
+
         Parameters
         ----------
-        None
-        
+        show_flag: bool, optional, default True
+            Flag which indicates whether or not to show the generated plots.
+
+        save_flag: bool, optional, default False
+            Flag which indicates whether or not to save the generated plots.
+
+        save_path: str, optional, default ""
+            Path (either relative or absolute) where the generated plots
+            should be saved. Defaults to the empty string, in which case the
+            plots will be saved to the current working directory.
+
         Returns
         -------
         None
@@ -347,6 +362,20 @@ class UnitPriceForecaster:
         )
         plt.ylabel(r"Deployment $D$ [{}]".format(self.units_str))
         plt.tight_layout()
+
+        if save_flag:
+            fig_path = save_path + "deployment.png"
+
+            plt.savefig(
+                fig_path,
+                format="png",
+                dpi=128
+            )
+
+            print(
+                "UnitPriceForecaster.plot():\tdeployment plot saved to",
+                fig_path
+            )
 
         #   2. plot learning curve
         learning_model_input_array = np.sort(
@@ -409,7 +438,21 @@ class UnitPriceForecaster:
         )
         plt.legend()
         plt.tight_layout()
-        
+
+        if save_flag:
+            fig_path = save_path + "unit_price_data.png"
+
+            plt.savefig(
+                fig_path,
+                format="png",
+                dpi=128
+            )
+
+            print(
+                "UnitPriceForecaster.plot():\tunit price data plot saved to",
+                fig_path
+            )
+
         #   3. forecasted unit price
         plt.figure(figsize=(8, 6))
         plt.grid(color="C7", alpha=0.5, which="both", zorder=1)
@@ -430,10 +473,25 @@ class UnitPriceForecaster:
             )
         )
         plt.tight_layout()
-        
+
+        if save_flag:
+            fig_path = save_path + "unit_price_forecast.png"
+
+            plt.savefig(
+                fig_path,
+                format="png",
+                dpi=128
+            )
+
+            print(
+                "UnitPriceForecaster.plot():\tunit price forecast plot saved to",
+                fig_path
+            )
+
         #   4. show
-        plt.show()
-        
+        if show_flag:
+            plt.show()
+
         return
 
 
@@ -445,7 +503,7 @@ if __name__ == "__main__":
     good_deployment_array = [1, 2, 3, 4]
     good_learning_array_u = [1, 2, 3, 4]
     good_learning_array_ppu = [1, 2, 3, 4]
-    
+
     #   1. passing a bad time array (not strictly increasing)
     try:
         bad_time_array = [0, 1, 0, 1]
@@ -455,7 +513,7 @@ if __name__ == "__main__":
             good_deployment_array,
             good_learning_array_u,
             good_learning_array_ppu
-        )    
+        )
 
     except RuntimeError as e:
         print(e)
