@@ -3,7 +3,8 @@
     Anthony Truelove MASc, P.Eng.
     Python Certified Professional Programmer (PCPP1)
 
-***See license terms***
+    Copyright 2025 - Anthony Truelove
+    **SEE LICENSE TERMS [HERE](./LICENSE)**
 
 This is a utility package for supporting instruction in MECH 447/542 as
 offered at the University of Victoria by Dr. Andrew Rowe.
