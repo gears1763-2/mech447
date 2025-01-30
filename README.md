@@ -19,11 +19,11 @@ the structure and layout defined in <https://packaging.python.org/en/latest/tuto
 
 In the directory for this project, you should find this README, a LICENSE file,
 a bash script for generating the documentation (Linux, Mac), a batch file for
-generating the documentation (Windows), a project manifest (toml), and
+generating the documentation (Windows), a project manifest (`.toml`), and
 the following sub-directories:
 
     docs/       The documentation for the package (start by opening `index.html`
-                in the browser of your choice)
+                in the browser of your choice).
 
     examples/   Some example scripts showing how to import and use the package.
 
