@@ -25,7 +25,8 @@ the following sub-directories:
     docs/       The documentation for the package (start by opening `index.html`
                 in the browser of your choice).
 
-    examples/   Some example scripts showing how to import and use the package.
+    examples/   Some example scripts showing how to import and use the package
+                (including an example of doing so within a Jupyter notebook).
 
     mech447/    The source code for the package.
 
