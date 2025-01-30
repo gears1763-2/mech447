@@ -39,13 +39,13 @@ Autodocumentation for this project is achieved using `pdoc` (see
 files, you need to make sure that `pdoc` is installed. Fortunately, this is 
 easily done using `pip`:
 
-	pip install pdoc
+    pip install pdoc
 
 Finally, note the autodocumentation includes generating a `pip` requirements
 file within the `mech447/` directory. This depends on the `pipreqs` package, so
 be sure to install that as well before making use of either of the `make_docs`
 scripts. Again, it's `pip` installable:
 
-	pip install pipreqs
+    pip install pipreqs
 
 --------
