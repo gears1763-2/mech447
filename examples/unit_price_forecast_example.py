@@ -80,8 +80,7 @@ unit_price_forecaster.plot(
 input("Press [enter] to clean up figures ...")
 
 for _, _, filename_list in os.walk(os.getcwd()):
-    pass
-
-for filename in filename_list:
-    if ".png" in filename:
-        os.remove(filename)
+    for filename in filename_list:
+        print(filename)
+        if ".png" in filename:
+            os.remove(filename)

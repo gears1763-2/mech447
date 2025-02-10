@@ -197,6 +197,25 @@ class ProjectEconomics:
         return
 
 
+    def __str__(self,) -> None:
+        """
+        __str__ magic method, to handle print(self).
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        str
+            Just returns an empty string. This is just a wrapper of
+            printKeyMetrics().
+        """
+
+        self.printKeyMetrics()
+        return ""
+
+
     def __checkInputs(
         self,
         nominal_expense_array_dict: dict[str, np.array],
@@ -794,7 +813,8 @@ if __name__ == "__main__":
     )
 
     project_economics.run()
-    project_economics.printKeyMetrics()
+    #project_economics.printKeyMetrics()
+    print(project_economics)
     project_economics.plot()
 
     print()
