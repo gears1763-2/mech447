@@ -701,6 +701,7 @@ class MixturePlanner:
                 self.load_duration_array,
                 y2=self.residual_load_duration_array,
                 color="green",
+                hatch="|",
                 alpha=0.25,
                 zorder=1,
                 label="Renewable Production"
@@ -1192,13 +1193,14 @@ if __name__ == "__main__":
     test_demand_array_MW = test_load_dataframe[feature_list[1]].values
 
     test_renewable_production_dict_MW = {
-        #"Solar": 100 * np.random.rand(8760),
-        #"Wind": 100 * np.random.rand(8760)
+        "Solar": 150 * np.random.rand(8760),
+        "Wind": 150 * np.random.rand(8760)
     }
 
     test_screening_curve_dict_CAD_MWc_yr = {
         "Coal": 1000 * (105 * np.linspace(0, 1, 1000) + 140),
         "Gas": 1000 * (325 * np.linspace(0, 1, 1000) + 50),
+        #"Combined Cycle": 1000 * (60 * np.linspace(0, 1, 1000) + 170),
         "Combined Cycle": 1000 * (95 * np.linspace(0, 1, 1000) + 155),
         #"Combined Cycle": 1000 * (95 * np.linspace(0, 1, 1000) + 145)
     }
