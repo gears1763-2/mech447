@@ -239,6 +239,13 @@ class MixturePlanner:
         A dictionary of production duration curves for each renewable tech.
         """
 
+        self.supply_stack_dict = 0
+        """
+        A supply stack dictionary consisting of four parallel arrays:
+        technologies, installed capacities, cumulative installed capacities,
+        and pool price. All arrays are in merit order.
+        """
+
         return
 
 
@@ -616,6 +623,57 @@ class MixturePlanner:
                     np.sort(self.renewable_production_dict[key])
                 )
 
+        #   10. construct supply stack
+        key_array = np.array(
+            [
+                key for key in self.sizing_dict.keys()
+                if self.sizing_dict[key] > 0
+            ]
+        )
+
+        N = len(key_array)
+
+        capacity_array = np.zeros(N)
+        cumulative_capacity_array = np.zeros(N)
+        pool_price_array = np.zeros(N)
+
+        for i in range(0, N):
+            capacity_array[i] = self.sizing_dict[key_array[i]]
+
+            pool_price_array[i] = (
+                self.screening_curve_dict[key_array[i]][-1]
+                - self.screening_curve_dict[key_array[i]][0]
+            ) / HOURS_PER_YEAR
+
+        idx_sort = np.argsort(pool_price_array)
+
+        key_array = key_array[idx_sort]
+        capacity_array = capacity_array[idx_sort]
+        pool_price_array = pool_price_array[idx_sort]
+
+        for i in range(0, N):
+            if i == 0:
+                cumulative_capacity_array[i] = capacity_array[i]
+
+            else:
+                cumulative_capacity_array[i] = (
+                    cumulative_capacity_array[i - 1]
+                    + capacity_array[i]
+                )
+
+        self.supply_stack_dict = {
+            "Technologies": key_array,
+            "Capacities [{}]".format(self.power_units_str):
+                capacity_array,
+            "Cumulative Capacities [{}]".format(self.power_units_str):
+                cumulative_capacity_array,
+            "Pool Price [{}/{}h]".format(
+                self.currency_units_str,
+                self.power_units_str
+            ):
+                pool_price_array
+        }
+
         return
 
 
@@ -874,7 +932,44 @@ class MixturePlanner:
                     fig_path
                 )
 
-        #   5. show
+        #   5. plot supply stack
+        key_list = [key for key in self.supply_stack_dict.keys()]
+
+        plt.figure(figsize=(8, 6))
+        plt.grid(color="C7", alpha=0.5, which="both", zorder=1)
+
+        for i in range(0, len(self.supply_stack_dict[key_list[0]])):
+            plt.bar(
+                self.supply_stack_dict[key_list[2]][i]
+                - self.supply_stack_dict[key_list[1]][i],
+                self.supply_stack_dict[key_list[3]][i],
+                width=self.supply_stack_dict[key_list[1]][i],
+                align="edge",
+                zorder=2,
+                label=self.supply_stack_dict[key_list[0]][i]
+            )
+
+        plt.xlim(0, self.supply_stack_dict[key_list[2]][-1])
+        plt.xlabel(key_list[2])
+        plt.ylabel(key_list[3])
+        plt.legend()
+        plt.tight_layout()
+
+        if save_flag:
+            fig_path = save_path + "supply_stack.png"
+
+            plt.savefig(
+                fig_path,
+                format="png",
+                dpi=128
+            )
+
+            print(
+                "MixturePlanner.plot():\tsupply stack plot saved to",
+                fig_path
+            )
+
+        #   6. show
         if show_flag:
             plt.show()
 
@@ -968,6 +1063,28 @@ class MixturePlanner:
                 + "/"
                 + self.power_units_str
                 + "c-yr"
+            )
+
+        #   6. supply stack
+        key_list = [key for key in self.supply_stack_dict.keys()]
+
+        print()
+        print("Supply Stack (for sizing):")
+
+        for i in range(0, len(self.supply_stack_dict[key_list[0]])):
+            print(
+                "\t",
+                " + ".join(self.supply_stack_dict[key_list[0]][0 : i + 1]),
+                ":",
+                "up to {} {}".format(
+                    round(self.supply_stack_dict[key_list[2]][i], 3),
+                    self.power_units_str
+                ),
+                "at {} {}/{}h".format(
+                    round(self.supply_stack_dict[key_list[3]][i], 3),
+                    self.currency_units_str,
+                    self.power_units_str
+                )
             )
 
         return
@@ -1214,7 +1331,6 @@ if __name__ == "__main__":
     )
 
     test_mixture_planner.run()
-    #text_mixture_planner.printKeyMetrics()
     print(test_mixture_planner)
 
     #   10. assert that sum of system productions is matching total demand
