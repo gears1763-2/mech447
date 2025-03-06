@@ -1490,7 +1490,7 @@ class MixturePlanner:
         print()
 
         #   1. technology changeover points
-        print("Technology Changeover Points:")
+        print("Technology Changeover Points (for cost-optimal sizing):")
 
         for i in range(0, len(self.changeover_ref_key_array) - 1):
             print(
@@ -1502,11 +1502,18 @@ class MixturePlanner:
                 round(self.changeover_capacity_factor_array[i], 3)
             )
 
+        #   2. build override string
+        if len(self.sizing_override_array) > 0:
+            override_str = "(sizing override):"
+
+        else:
+            override_str = "(for cost-optimal sizing)"
+
         #   2. system sizing
         key_list = [key for key in self.supply_stack_dict.keys()]
 
         print()
-        print("System Sizing:")
+        print("System Sizing " + override_str)
 
         for key in self.supply_stack_dict[key_list[0]]:
             print(
@@ -1526,9 +1533,9 @@ class MixturePlanner:
         )
 
         print()
-        print("System Production (for sizing):")
+        print("System Production " + override_str)
 
-        for key in self.supply_stack_dict[key_list[0]]:
+        for key in self.production_dict.keys():
             print(
                 "\t",
                 key,
@@ -1539,7 +1546,7 @@ class MixturePlanner:
 
         #   4. system capacity factors
         print()
-        print("System Capacity Factors (for sizing):")
+        print("System Capacity Factors " + override_str)
 
         for key in self.supply_stack_dict[key_list[0]]:
             print(
@@ -1551,7 +1558,7 @@ class MixturePlanner:
 
         #   5. system costs
         print()
-        print("System Costs (for sizing):")
+        print("System Costs " + override_str)
 
         for key in self.tech_cost_dict.keys():
             print(
@@ -1569,7 +1576,7 @@ class MixturePlanner:
         key_list = [key for key in self.supply_stack_dict.keys()]
 
         print()
-        print("Supply Stack (for sizing):")
+        print("Supply Stack:")
 
         for i in range(0, len(self.supply_stack_dict[key_list[0]])):
             print(
