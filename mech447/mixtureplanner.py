@@ -729,47 +729,31 @@ class MixturePlanner:
             )
 
         #   2. dispatchable generation assets
-        base_height = 0
-        max_height = 0
+        for key in self.sizing_dict.keys():
+            self.production_dict[key] = 0
 
-        for i in range(0, len(self.changeover_ref_key_array)):
-            key = self.changeover_ref_key_array[i]
-            max_height += self.sizing_dict[key]
+        N = len(self.time_array_hrs)
 
-            height_array = self.cf_2_residual_load_interp(
-                self.capacity_factor_array
-            )
+        supply_stack_keys = [key for key in self.supply_stack_dict.keys()]
+        M = len(self.supply_stack_dict[supply_stack_keys[0]])
 
-            for j in range(0, len(height_array)):
-                if height_array[j] > max_height:
-                    height_array[j] = max_height
+        for i in range(0, N):
+            residual_demand_remaining = self.residual_demand_array[i]
+            delta_time_hrs = self.delta_time_array_hrs[i]
 
-            base_array = base_height * np.ones(len(height_array))
+            for j in range(0, M):
+                tech = self.supply_stack_dict[supply_stack_keys[0]][j]
+                capacity = self.supply_stack_dict[supply_stack_keys[1]][j]
 
-            boolean_mask = height_array > base_height
+                if residual_demand_remaining > capacity:
+                    self.production_dict[tech] += capacity * delta_time_hrs
+                    residual_demand_remaining -= capacity
 
-            rect_edges_array = (
-                HOURS_PER_YEAR
-                * self.capacity_factor_array[boolean_mask]
-            )
-
-            rect_edge_heights_array = height_array[boolean_mask] - base_height
-
-            energy_sum = 0
-
-            for j in range(0, len(rect_edges_array) - 1):
-                rectangle_average_height = 0.5 * (
-                    rect_edge_heights_array[j]
-                    + rect_edge_heights_array[j + 1]
-                )
-
-                rectangle_base = rect_edges_array[j + 1] - rect_edges_array[j]
-
-                energy_sum += rectangle_base * rectangle_average_height
-
-            self.production_dict[key] = energy_sum
-
-            base_height = max_height
+                else:
+                    self.production_dict[tech] += (
+                        residual_demand_remaining * delta_time_hrs
+                    )
+                    residual_demand_remaining = 0
 
         return
 
@@ -790,13 +774,15 @@ class MixturePlanner:
 
         self.tech_capacity_factor_dict = {}
 
-        for i in range(0, len(self.changeover_ref_key_array)):
-            key = self.changeover_ref_key_array[i]
+        for key in self.sizing_dict.keys():
+            if self.sizing_dict[key] <= 0:
+                capacity_factor = 0
 
-            capacity_factor = (
-                self.production_dict[key]
-                / (HOURS_PER_YEAR * self.sizing_dict[key])
-            )
+            else:
+                capacity_factor = (
+                    self.production_dict[key]
+                    / (HOURS_PER_YEAR * self.sizing_dict[key])
+                )
 
             self.tech_capacity_factor_dict[key] = capacity_factor
 
@@ -814,21 +800,31 @@ class MixturePlanner:
         for key in self.tech_capacity_factor_dict.keys():
             capacity_factor = self.tech_capacity_factor_dict[key]
 
-            idx_cf = np.where(
-                self.capacity_factor_array >= capacity_factor
-            )[0][0]
+            if capacity_factor > 0:
+                idx_cf = np.where(
+                    self.capacity_factor_array >= capacity_factor
+                )[0][0]
 
-            self.tech_cost_dict[key] = self.screening_curve_dict[key][idx_cf]
+                self.tech_cost_dict[key] = (
+                    self.screening_curve_dict[key][idx_cf]
+                )
+
+            else:
+                self.tech_cost_dict[key] = (
+                    self.screening_curve_dict[key][0]
+                )
 
         return
 
 
     def constructSupplyStack(self) -> None:
         """
-        Helper method to construct supply stack for each active technology in
-        the generation mix. A technology is considered active if it has
-        non-zero production. Technologies with zero production are considered
-        to be reserve techs.
+        Helper method to construct supply stack for each technology in the
+        generation mix.
+
+        Note that the pool price associated with each tech is computed as the
+        slope of the corresponding screening curve divided by 8760 hours per
+        year.
 
         Parameters
         ----------
@@ -839,13 +835,7 @@ class MixturePlanner:
         None
         """
 
-        key_array = np.array(
-            [
-                key for key in self.production_dict.keys()
-                if key in self.sizing_dict.keys()
-                and self.production_dict[key] > 0
-            ]
-        )
+        key_array = np.array([key for key in self.sizing_dict.keys()])
 
         N = len(key_array)
 
@@ -943,12 +933,11 @@ class MixturePlanner:
         Helper method to compute wholesale price. Wholesale price is defined
         as
 
-        $$ P_\\textrm{wholesale} = \\frac{\\int_{0}^{T}\\widehat{L}(t)\\textrm{PP}(t) dt}{\\int_{0}^{T}L(t) dt} \\cong \\frac{\\sum_{i}\\widehat{L}_i\\textrm{PP}_i(\\Delta t)_i}{\\sum_{i}L_i(\\Delta t)_i} $$
+        $$ P_\\textrm{wholesale} = \\frac{\\int_{0}^{T}L(t)\\textrm{PP}(t) dt}{\\int_{0}^{T}L(t) dt} \\cong \\frac{\\sum_{i}L_i\\textrm{PP}_i(\\Delta t)_i}{\\sum_{i}L_i(\\Delta t)_i} $$
 
         where $P_\\textrm{wholesale}$ is wholesale price (i.e., energy weighted
-        average pool price), $T$ is the modelling period, $\\widehat{L}$ is
-        residual demand (residual load), $\\textrm{PP}$ is pool price,
-        and $L$ is demand (load).
+        average pool price), $T$ is the modelling period, $L$ is demand (load),
+        and $\\textrm{PP}$ is pool price.
 
         Parameters
         ----------
@@ -962,7 +951,7 @@ class MixturePlanner:
         numerator = np.sum(
             np.multiply(
                 np.multiply(
-                    self.residual_demand_array,
+                    self.demand_array,
                     self.pool_price_array
                 ),
                 self.delta_time_array_hrs
@@ -1076,7 +1065,7 @@ class MixturePlanner:
         )
 
         #   7. get minimum cost sizing (based on changeover points),
-        #      override where appropriate
+        #      override sizing where appropriate
         self.getMinimumCostSizing()
 
         #   8. compute total demand
@@ -1085,17 +1074,18 @@ class MixturePlanner:
             self.delta_time_array_hrs
         )
 
-        #   9. get total production from all generation assets
+        #   9. construct supply stack
+        self.constructSupplyStack()
+
+        #   10. get total production from all generation assets in the supply
+        #       stack
         self.getTotalProduction()
 
-        #   10. compute technology capacity factors
+        #   11. compute technology capacity factors
         self.computeTechnologyCapacityFactors()
 
-        #   11. compute technology costs
+        #   12. compute technology costs
         self.computeTechnologyCosts()
-
-        #   12. construct supply stack
-        self.constructSupplyStack()
 
         #   13. generate pool price array and pool price duration curve array
         self.generatePoolPriceArrays()
@@ -1208,9 +1198,15 @@ class MixturePlanner:
         base_height = 0
         max_height = 0
 
-        for i in range(0, len(self.changeover_ref_key_array)):
-            key = self.changeover_ref_key_array[i]
-            max_height += self.sizing_dict[key]
+        key_list = [key for key in self.supply_stack_dict]
+        N = len(self.supply_stack_dict[key_list[0]])
+
+        for i in range(0, N):
+            if self.supply_stack_dict[key_list[1]][i] <= 0:
+                continue
+
+            key = self.supply_stack_dict[key_list[0]][i]
+            max_height += self.supply_stack_dict[key_list[1]][i]
 
             height_array = self.cf_2_residual_load_interp(
                 self.capacity_factor_array
@@ -1371,6 +1367,9 @@ class MixturePlanner:
         plt.grid(color="C7", alpha=0.5, which="both", zorder=1)
 
         for i in range(0, len(self.supply_stack_dict[key_list[0]])):
+            if self.supply_stack_dict[key_list[1]][i] <= 0:
+                continue
+
             plt.bar(
                 self.supply_stack_dict[key_list[2]][i]
                 - self.supply_stack_dict[key_list[1]][i],
@@ -1504,10 +1503,12 @@ class MixturePlanner:
             )
 
         #   2. system sizing
+        key_list = [key for key in self.supply_stack_dict.keys()]
+
         print()
         print("System Sizing:")
 
-        for key in self.sizing_dict.keys():
+        for key in self.supply_stack_dict[key_list[0]]:
             print(
                 "\t",
                 key,
@@ -1527,7 +1528,7 @@ class MixturePlanner:
         print()
         print("System Production (for sizing):")
 
-        for key in self.production_dict.keys():
+        for key in self.supply_stack_dict[key_list[0]]:
             print(
                 "\t",
                 key,
@@ -1540,7 +1541,7 @@ class MixturePlanner:
         print()
         print("System Capacity Factors (for sizing):")
 
-        for key in self.tech_capacity_factor_dict.keys():
+        for key in self.supply_stack_dict[key_list[0]]:
             print(
                 "\t",
                 key,
