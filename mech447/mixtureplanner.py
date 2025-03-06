@@ -33,6 +33,7 @@ class MixturePlanner:
         demand_array: np.array,
         renewable_production_dict: dict[str, np.array],
         screening_curve_dict: dict[str, np.array],
+        sizing_override_array: np.array = np.array([]),
         power_units_str: str = "MW",
         currency_units_str: str = "CAD"
     ) -> None:
@@ -61,6 +62,12 @@ class MixturePlanner:
             tech considered in the production mix. Note that all elements of
             the dict must be the same length, and it is assumed that each 
             element spans the capacity factor interval [0, 1].
+
+        sizing_override_array: np.array, optional, default []
+            This is an array of sizing overrides (e.g. reserve capacity). The
+            order of the size overrides corresponds to the order of elements
+            in the screening curve dictionary (and so both inputs must have
+            the same number of elements).
 
         power_units_str: str, optional, default "MW"
             This is a string defining what the power units are, for printing
@@ -98,7 +105,8 @@ class MixturePlanner:
         self.__checkInputs(
             demand_array,
             renewable_production_dict,
-            screening_curve_dict
+            screening_curve_dict,
+            sizing_override_array
         )
 
         #   3. init attributes
@@ -132,6 +140,14 @@ class MixturePlanner:
             self.screening_curve_dict[key] = np.array(
                 self.screening_curve_dict[key]
             )
+
+        self.sizing_override_array = np.array(sizing_override_array)
+        """
+        This is an array of sizing overrides (e.g. reserve capacity). The
+        order of the size overrides corresponds to the order of elements
+        in the screening curve dictionary (and so both inputs must have
+        the same number of elements).
+        """
 
         self.power_units_str = power_units_str
         """
@@ -206,6 +222,13 @@ class MixturePlanner:
         exceedance proportion.
         """
 
+        self.residual_load_2_cf_interp = 0
+        """
+        A `scipy.interpolate.interp1d` that is used to map from arbitrary
+        residual loads (at some exceedance proportion) to the corresponding
+        capacity factor.
+        """
+
         self.sizing_dict = 0
         """
         A dictionary of the minimum cost sizing of each screened technology.
@@ -246,6 +269,34 @@ class MixturePlanner:
         and pool price. All arrays are in merit order.
         """
 
+        self.pool_price_array = 0
+        """
+        An array of the pool price at each point in time.
+        """
+
+        self.pool_price_duration_array = 0
+        """
+        This is an array which contains the points of a pool price duration
+        curve (corresponds to the computed pool price array).
+        """
+
+        self.wholesale_price = 0
+        """
+        The wholesale price of energy. In other words, this is the energy
+        weighted average pool price over the modelling period.
+        """
+
+        self.capacity_price = 0
+        """
+        The per-time-step fixed cost of the cheapest dispatchable technology.
+        """
+
+        self.LACE_dict = 0
+        """
+        A dictionary of the computed LACE values for each renewable generation
+        asset.
+        """
+
         return
 
 
@@ -272,7 +323,8 @@ class MixturePlanner:
         self,
         demand_array: np.array,
         renewable_production_dict: dict[str, np.array],
-        screening_curve_dict: dict[str, np.array]
+        screening_curve_dict: dict[str, np.array],
+        sizing_override_array: np.array
     ) -> None:
         """
         Helper method to check __init__ inputs.
@@ -293,6 +345,12 @@ class MixturePlanner:
             tech considered in the production mix. Note that all elements of
             the dict must be the same length, and it is assumed that each 
             element spans the capacity factor interval [0, 1].
+
+        sizing_override_array: np.array
+            This is an array of sizing overrides (e.g. reserve capacity). The
+            order of the size overrides corresponds to the order of elements
+            in the screening curve dictionary (and so both inputs must have
+            the same number of elements).
 
         Returns
         -------
@@ -406,7 +464,34 @@ class MixturePlanner:
 
                 raise RuntimeError(error_string)
 
-        #   10. screening curve arrays should be sufficiency dense
+        #   10. non-empty sizing override array should have as many elements as
+        #       screening curve dictionary has keys
+        if len(sizing_override_array) > 0:
+            N = len(screening_curve_dict)
+
+            if len(sizing_override_array) != N:
+                error_string = "ERROR: MixturePlanner.__checkInputs():\t"
+                error_string += "sizing override array must have as many "
+                error_string += "elements as the screening curve dictionary "
+                error_string += "has keys"
+
+                raise RuntimeError(error_string)
+
+        #   11. sizing override array must be strictly non-negative
+        for i in range(0, len(sizing_override_array)):
+            sizing = sizing_override_array[i]
+
+            if sizing < 0:
+                error_string = "ERROR: MixturePlanner.__checkInputs():\t"
+                error_string += "sizing override array must be strictly "
+                error_string += "non-negative (x[i] >= 0 for all i), "
+                error_string += "sizing override array element "
+                error_string += str(i)
+                error_string += " is not"
+
+                raise RuntimeError(error_string)
+
+        #   12. screening curve arrays should be sufficiency dense
         for key in screening_curve_dict.keys():
             if len(screening_curve_dict[key]) < 100:
                 warning_string = "WARNING: MixturePlanner.__checkInputs():\t"
@@ -423,9 +508,16 @@ class MixturePlanner:
         return
 
 
-    def run(self,) -> None:
+    def computeResidualDemand(self) -> None:
         """
-        Method to run the mixture planner and generate results.
+        Helper method to compute the residual demand at every time step.
+        Residual demand is defined as
+
+        $$ \\widehat{L}(t) = L(t) - \\sum_i R_i(t) $$
+
+        where $\\widehat{L}$ is residual demand (residual load), $L$ is demand
+        (load), and $R_i$ is production from the $i^\\textrm{th}$ renewable
+        generation asset.
 
         Parameters
         ----------
@@ -436,7 +528,6 @@ class MixturePlanner:
         None
         """
 
-        #   1. compute residual demand array
         self.residual_demand_array = copy.deepcopy(self.demand_array)
 
         for key in self.renewable_production_dict.keys():
@@ -445,21 +536,75 @@ class MixturePlanner:
                 self.renewable_production_dict[key]
             )
 
-        #   2. extract load duration curve
-        self.duration_x_array = np.zeros(len(self.demand_array))
+        return
 
+
+    def constructLoadDurationCurves(self) -> None:
+        """
+        Helper method to construct load duration curves (load and residual
+        load, as appropriate). Again, 'load' and 'demand' are synonymous
+        here.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+
+        #   1. extract load duration curve
+        N = len(self.demand_array)
+        self.duration_x_array = (1 / N) * np.linspace(0, N - 1, N)
         self.load_duration_array = np.flip(np.sort(self.demand_array))
-        N = len(self.load_duration_array)
 
-        for i in range(0, N):
-            self.duration_x_array[i] = i / N
-
-        #   3. extract residual load duration curve
+        #   2. extract residual load duration curve
         self.residual_load_duration_array = np.flip(
             np.sort(self.residual_demand_array)
         )
 
-        #   4. extract minimum cost frontier, track changeover points
+        return
+
+
+    def constructRenewableProductionDurationCurves(self) -> None:
+        """
+        Helper method to construct renewable production duration curves.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+
+        if len(self.renewable_production_dict) > 0:
+            self.renewable_production_duration_dict = {}
+
+            for key in self.renewable_production_dict.keys():
+                self.renewable_production_duration_dict[key] = np.flip(
+                    np.sort(self.renewable_production_dict[key])
+                )
+
+        return
+
+
+    def extractMinimumCostFrontier(self) -> None:
+        """
+        Helper method to extract minimum cost frontier and track technology
+        changeover points.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+
         for key in self.screening_curve_dict.keys():
             self.capacity_factor_array = np.linspace(
                 0, 1, len(self.screening_curve_dict[key])
@@ -507,38 +652,74 @@ class MixturePlanner:
             np.array(self.changeover_cost_array)
         )
 
-        #   5. get minimum cost sizing (based on changeover points)
-        self.cf_2_residual_load_interp = spi.interp1d(
-            self.duration_x_array,
-            self.residual_load_duration_array,
-            kind="linear",
-            fill_value="extrapolate"
-        )
+        return
 
+
+    def getMinimumCostSizing(self) -> None:
+        """
+        Helper method to compute minimum cost sizing (i.e., cost-optimal
+        generation mix).
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+
+        #   1. init sizing dictionary
         self.sizing_dict = {}
 
         for key in self.screening_curve_dict.keys():
             self.sizing_dict[key] = 0
 
-        total_installed = 0
+        #   2. handle no override
+        if len(self.sizing_override_array) == 0:
+            total_installed = 0
 
-        for i in range(0, len(self.changeover_ref_key_array)):
-            key = self.changeover_ref_key_array[i]
-            capacity_factor = self.changeover_capacity_factor_array[i]
+            for i in range(0, len(self.changeover_ref_key_array)):
+                key = self.changeover_ref_key_array[i]
+                capacity_factor = self.changeover_capacity_factor_array[i]
 
-            installed_capacity = self.cf_2_residual_load_interp(
-                capacity_factor
-            ) - total_installed
+                installed_capacity = self.cf_2_residual_load_interp(
+                    capacity_factor
+                ) - total_installed
 
-            self.sizing_dict[key] = installed_capacity
-            total_installed += installed_capacity
+                self.sizing_dict[key] = installed_capacity
+                total_installed += installed_capacity
 
-        #   6. compute total demand and production
-        self.total_demand = np.dot(
-            self.demand_array,
-            self.delta_time_array_hrs
-        )
+        #   3. handle override
+        else:
+            idx = 0
 
+            for key in self.sizing_dict.keys():
+                self.sizing_dict[key] = self.sizing_override_array[idx]
+                idx += 1
+
+                if key not in self.changeover_ref_key_array:
+                    self.changeover_ref_key_array = np.append(
+                        self.changeover_ref_key_array,
+                        key
+                    )
+
+        return
+
+    def getTotalProduction(self) -> None:
+        """
+        Helper method to compute total production from all generation assets.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+
+        #   1. renewable generation assets
         self.production_dict = {}
 
         for key in self.renewable_production_dict.keys():
@@ -547,6 +728,7 @@ class MixturePlanner:
                 self.delta_time_array_hrs
             )
 
+        #   2. dispatchable generation assets
         base_height = 0
         max_height = 0
 
@@ -589,7 +771,23 @@ class MixturePlanner:
 
             base_height = max_height
 
-        #   7. compute technology capacity factors
+        return
+
+
+    def computeTechnologyCapacityFactors(self) -> None:
+        """
+        Helper method to compute capacity factors for each technology in the
+        generation mix.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+
         self.tech_capacity_factor_dict = {}
 
         for i in range(0, len(self.changeover_ref_key_array)):
@@ -602,7 +800,15 @@ class MixturePlanner:
 
             self.tech_capacity_factor_dict[key] = capacity_factor
 
-        #   8. compute technology costs
+        return
+
+
+    def computeTechnologyCosts(self) -> None:
+        """
+        Helper method to compute the costs (annual revenue requirement) for
+        each technology in the generation mix.
+        """
+
         self.tech_cost_dict = {}
 
         for key in self.tech_capacity_factor_dict.keys():
@@ -614,20 +820,30 @@ class MixturePlanner:
 
             self.tech_cost_dict[key] = self.screening_curve_dict[key][idx_cf]
 
-        #   9. construct renewable production duration curves
-        if len(self.renewable_production_dict) > 0:
-            self.renewable_production_duration_dict = {}
+        return
 
-            for key in self.renewable_production_dict.keys():
-                self.renewable_production_duration_dict[key] = np.flip(
-                    np.sort(self.renewable_production_dict[key])
-                )
 
-        #   10. construct supply stack
+    def constructSupplyStack(self) -> None:
+        """
+        Helper method to construct supply stack for each active technology in
+        the generation mix. A technology is considered active if it has
+        non-zero production. Technologies with zero production are considered
+        to be reserve techs.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+
         key_array = np.array(
             [
-                key for key in self.sizing_dict.keys()
-                if self.sizing_dict[key] > 0
+                key for key in self.production_dict.keys()
+                if key in self.sizing_dict.keys()
+                and self.production_dict[key] > 0
             ]
         )
 
@@ -673,6 +889,222 @@ class MixturePlanner:
             ):
                 pool_price_array
         }
+
+        return
+
+
+    def generatePoolPriceArrays(self) -> None:
+        """
+        Helper method to generate pool price array and pool price duration
+        curve array.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+
+        #   1. init pool price array
+        N = len(self.time_array_hrs)
+        self.pool_price_array = np.zeros(N)
+
+        #   2. populate pool price array
+        key_list = [key for key in self.supply_stack_dict.keys()]
+        M = len(self.supply_stack_dict[key_list[0]])
+
+        for i in range(0, N):
+            if self.residual_demand_array[i] <= 0:
+                continue
+
+            for j in range(0, M):
+                if (
+                    self.residual_demand_array[i]
+                    <= self.supply_stack_dict[key_list[2]][j]
+                ):
+                    break
+
+            self.pool_price_array[i] = (
+                self.supply_stack_dict[key_list[3]][j]
+            )
+
+        #   3. extract pool price duration array
+        self.pool_price_duration_array = np.flip(
+            np.sort(self.pool_price_array)
+        )
+
+        return
+
+
+    def computeWholesalePrice(self) -> None:
+        """
+        Helper method to compute wholesale price. Wholesale price is defined
+        as
+
+        $$ P_\\textrm{wholesale} = \\frac{\\int_{0}^{T}\\widehat{L}(t)\\textrm{PP}(t) dt}{\\int_{0}^{T}L(t) dt} \\cong \\frac{\\sum_{i}\\widehat{L}_i\\textrm{PP}_i(\\Delta t)_i}{\\sum_{i}L_i(\\Delta t)_i} $$
+
+        where $P_\\textrm{wholesale}$ is wholesale price (i.e., energy weighted
+        average pool price), $T$ is the modelling period, $\\widehat{L}$ is
+        residual demand (residual load), $\\textrm{PP}$ is pool price,
+        and $L$ is demand (load).
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+
+        numerator = np.sum(
+            np.multiply(
+                np.multiply(
+                    self.residual_demand_array,
+                    self.pool_price_array
+                ),
+                self.delta_time_array_hrs
+            )
+        )
+
+        self.wholesale_price = numerator / self.total_demand
+
+        return
+
+
+    def computeLACE(self) -> None:
+        """
+        Helper method to compute levellized avoided cost of energy (LACE) for
+        each renewable generation asset. LACE is defined for each renewable
+        generation asset as
+
+        $$ \\textrm{LACE} = \\frac{\\sum_i\\left[\\textrm{PP}_iR_i(\\Delta t)_i + P_\\textrm{capacity}R_i\\right]}{\\sum_iR_i(\\Delta t)_i} $$
+
+        where $\\texttt{PP}$ is pool price, $R$ is renewable generation,
+        and $P_\\textrm{capacity}$ is the capacity price (taken to be the fixed
+        cost of the cheapest dispatchable technology available).
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+
+        #   1. compute capacity price (for each time step)
+        lowest_fixed_cost = np.inf
+
+        for key in self.screening_curve_dict.keys():
+            if self.screening_curve_dict[key][0] < lowest_fixed_cost:
+                lowest_fixed_cost = self.screening_curve_dict[key][0]
+
+        self.capacity_price = lowest_fixed_cost / HOURS_PER_YEAR
+
+        #   2. init LACE dict
+        self.LACE_dict = {}
+
+        for key in self.renewable_production_dict.keys():
+            self.LACE_dict[key] = 0
+
+        #   3. populate LACE dict
+        for key in self.LACE_dict.keys():
+            annual_energy_sales = np.sum(
+                np.multiply(
+                    np.multiply(
+                        self.pool_price_array,
+                        self.renewable_production_dict[key]
+                    ),
+                    self.delta_time_array_hrs
+                )
+            )
+
+            annual_capacity_payment = self.capacity_price * np.sum(
+                self.renewable_production_dict[key]
+            )
+
+            self.LACE_dict[key] = (
+                (annual_energy_sales + annual_capacity_payment)
+                / self.production_dict[key]
+            )
+
+        return
+
+
+    def run(self,) -> None:
+        """
+        Method to run the mixture planner and generate results.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+
+        #   1. compute residual demand array
+        self.computeResidualDemand()
+
+        #   2. construct load duration curves
+        self.constructLoadDurationCurves()
+
+        #   3. construct renewable production duration curves
+        self.constructRenewableProductionDurationCurves()
+
+        #   4. extract minimum cost frontier, track changeover points
+        self.extractMinimumCostFrontier()
+
+        #   5. construct capacity factor to residual load interpolator
+        self.cf_2_residual_load_interp = spi.interp1d(
+            self.duration_x_array,
+            self.residual_load_duration_array,
+            kind="linear",
+            fill_value="extrapolate"
+        )
+
+        #   6. construct residual load to capacity factor interpolator
+        self.residual_load_2_cf_interp = spi.interp1d(
+            self.residual_load_duration_array,
+            self.duration_x_array,
+            kind="linear",
+            fill_value="extrapolate"
+        )
+
+        #   7. get minimum cost sizing (based on changeover points),
+        #      override where appropriate
+        self.getMinimumCostSizing()
+
+        #   8. compute total demand
+        self.total_demand = np.dot(
+            self.demand_array,
+            self.delta_time_array_hrs
+        )
+
+        #   9. get total production from all generation assets
+        self.getTotalProduction()
+
+        #   10. compute technology capacity factors
+        self.computeTechnologyCapacityFactors()
+
+        #   11. compute technology costs
+        self.computeTechnologyCosts()
+
+        #   12. construct supply stack
+        self.constructSupplyStack()
+
+        #   13. generate pool price array and pool price duration curve array
+        self.generatePoolPriceArrays()
+
+        #   14. compute wholesale price
+        self.computeWholesalePrice()
+
+        #   15. compute levellized avoided cost of electricity (LACE)
+        self.computeLACE()
 
         return
 
@@ -969,7 +1401,74 @@ class MixturePlanner:
                 fig_path
             )
 
-        #   6. show
+        #   6. plot pool price time series
+        plt.figure(figsize=(8, 6))
+        plt.grid(color="C7", alpha=0.5, which="both", zorder=1)
+        plt.plot(
+            self.time_array_hrs,
+            self.pool_price_array,
+            zorder=2
+        )
+
+        plt.xlim(self.time_array_hrs[0], self.time_array_hrs[-1])
+        plt.xlabel(r"Time Elapsed [hours]")
+        plt.ylabel(
+            "Pool Price [{}/{}h]".format(
+                self.currency_units_str,
+                self.power_units_str
+            )
+        )
+        plt.tight_layout()
+
+        if save_flag:
+            fig_path = save_path + "pool_price_time_series.png"
+
+            plt.savefig(
+                fig_path,
+                format="png",
+                dpi=128
+            )
+
+            print(
+                "MixturePlanner.plot():\tpool price time series plot saved to",
+                fig_path
+            )
+
+        #   7. plot pool price duration curve
+        plt.figure(figsize=(8, 6))
+        plt.grid(color="C7", alpha=0.5, which="both", zorder=1)
+        plt.plot(
+            self.duration_x_array,
+            self.pool_price_duration_array,
+            zorder=2
+        )
+
+        plt.xlim(0, 1)
+        plt.xlabel("Proportion of Year [  ]")
+        plt.ylim(0, 1.02 * np.max(self.pool_price_duration_array))
+        plt.ylabel(
+            "Pool Price [{}/{}h]".format(
+                self.currency_units_str,
+                self.power_units_str
+            )
+        )
+        plt.tight_layout()
+
+        if save_flag:
+            fig_path = save_path + "pool_price_duration_curves.png"
+
+            plt.savefig(
+                fig_path,
+                format="png",
+                dpi=128
+            )
+
+            print(
+                "MixturePlanner.plot():\tpool price duration curve plot saved to",
+                fig_path
+            )
+
+        #   8. show
         if show_flag:
             plt.show()
 
@@ -1086,6 +1585,46 @@ class MixturePlanner:
                     self.power_units_str
                 )
             )
+
+        #   7. wholesale price
+        print()
+        print(
+            "Wholesale Price:",
+            str(round(self.wholesale_price, 3)),
+            "{}/{}h".format(
+                self.currency_units_str,
+                self.power_units_str
+            )
+        )
+
+        #   8. capacity price
+        print()
+        print(
+            "Capacity Price:",
+            str(round(self.capacity_price, 3)),
+            "{}/{}".format(
+                self.currency_units_str,
+                self.power_units_str
+            ),
+            "(for each hour)"
+        )
+
+        #   9. LACE
+        if len(self.renewable_production_dict) > 0:
+            print()
+            print("LACE:")
+
+            for key in self.LACE_dict.keys():
+                print(
+                    "\t",
+                    key, 
+                    ":",
+                    str(round(self.LACE_dict[key], 3)),
+                    "{}/{}h".format(
+                        self.currency_units_str,
+                        self.power_units_str
+                    )
+                )
 
         return
 
@@ -1302,7 +1841,49 @@ if __name__ == "__main__":
     else:
         raise RuntimeError("Expected a RuntimeError here.")
 
-    #   9. good construction
+    #   9. passing a bad sizing override array (wrong size)
+    try:
+        bad_sizing_override_array = [100, 100]
+
+        MixturePlanner(
+            good_time_array_hrs,
+            good_demand_array,
+            good_renewable_production_dict,
+            good_screening_curve_dict,
+            sizing_override_array=bad_sizing_override_array
+        )
+
+    except RuntimeError as e:
+        print(e)
+
+    except Exception as e:
+        raise(e)
+
+    else:
+        raise RuntimeError("Expected a RuntimeError here.")
+
+    #   10. passing a bad sizing override array (negative sizing)
+    try:
+        bad_sizing_override_array = [100, 100, -100]
+
+        MixturePlanner(
+            good_time_array_hrs,
+            good_demand_array,
+            good_renewable_production_dict,
+            good_screening_curve_dict,
+            sizing_override_array=bad_sizing_override_array
+        )
+
+    except RuntimeError as e:
+        print(e)
+
+    except Exception as e:
+        raise(e)
+
+    else:
+        raise RuntimeError("Expected a RuntimeError here.")
+
+    #   11. good construction
     test_load_dataframe = pd.read_csv("test_data/test_demand_data.csv")
     feature_list = list(test_load_dataframe)
 
@@ -1327,13 +1908,16 @@ if __name__ == "__main__":
         test_demand_array_MW,
         test_renewable_production_dict_MW,
         test_screening_curve_dict_CAD_MWc_yr,
-        power_units_str="MW"
+        sizing_override_array=[],
+        power_units_str="MW",
+        currency_units_str="CAD"
     )
 
     test_mixture_planner.run()
     print(test_mixture_planner)
 
-    #   10. assert that sum of system productions is matching total demand
+    #   12. assert that sum of system productions is matching total demand,
+    #       plot results
     total_production = 0
 
     for key in test_mixture_planner.production_dict:
@@ -1342,6 +1926,45 @@ if __name__ == "__main__":
     assert(
         abs(test_mixture_planner.total_demand - total_production)
         / test_mixture_planner.total_demand < 0.001
+    )
+
+    test_mixture_planner.plot()
+    print()
+    print("==================================================================")
+    print()
+
+    #   13. test sizing override
+    test_mixture_planner = MixturePlanner(
+        test_time_array_hours,
+        test_demand_array_MW,
+        test_renewable_production_dict_MW,
+        test_screening_curve_dict_CAD_MWc_yr,
+        sizing_override_array=[1200, 850, 250],
+        power_units_str="MW",
+        currency_units_str="CAD"
+    )
+
+    test_mixture_planner.run()
+    print(test_mixture_planner)
+
+    #   14. assert that sum of system productions is matching total demand,
+    #       plot results
+    total_production = 0
+
+    for key in test_mixture_planner.production_dict:
+        total_production += test_mixture_planner.production_dict[key]
+
+    assert(
+        abs(test_mixture_planner.total_demand - total_production)
+        / test_mixture_planner.total_demand < 0.001
+    )
+
+    #   15. assert that capacity price reflects cheapest dispatchable tech
+    assert(
+        test_mixture_planner.capacity_price == (
+            test_screening_curve_dict_CAD_MWc_yr["Gas"][0]
+            / HOURS_PER_YEAR
+        )
     )
 
     test_mixture_planner.plot()
