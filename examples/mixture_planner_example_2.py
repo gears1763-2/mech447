@@ -4,8 +4,8 @@
     2025
 
     This is an example of using the `mech447` package to solve the questions
-    of assignment 3. This shows the `MixturePlanner` class running in default
-    mode.
+    of assignment 3. This shows the `MixturePlanner` class running in sizing
+    override mode.
 """
 
 # ==== IMPORTS ============================================================== #
@@ -57,6 +57,15 @@ screening_curve_dict_CAD_MWc_yr = {
 #   4. init renewable production dict
 renewable_production_dict_MW = {}
 
+#   5. init sizing override array
+max_demand_MW = np.max(demand_array_MW)
+
+sizing_override_array_MW = [
+    0.50 * max_demand_MW,    # <-- installed capacity of first tech in screening curve dict (Coal)
+    0.25 * max_demand_MW,    # <-- installed capacity of second tech in screening curve dict (Gas)
+    0.50 * max_demand_MW     # <-- installed capacity of third tech in screening curve dict (CC)
+]
+
 
 # ==== QUESTION 1 =========================================================== #
 
@@ -66,7 +75,9 @@ mixture_planner_q1 = mp.MixturePlanner(
     demand_array_MW,
     renewable_production_dict_MW,
     screening_curve_dict_CAD_MWc_yr,
-    power_units_str="MW"
+    sizing_override_array=sizing_override_array_MW,
+    power_units_str="MW",
+    currency_units_str="CAD"
 )
 
 #   5. run mixture planner, print, plot
@@ -98,7 +109,9 @@ mixture_planner_q2 = mp.MixturePlanner(
     demand_array_MW,
     renewable_production_dict_MW,
     screening_curve_dict_CAD_MWc_yr,
-    power_units_str="MW"
+    sizing_override_array=sizing_override_array_MW,
+    power_units_str="MW",
+    currency_units_str="CAD"
 )
 
 #   8. run mixture planner, print, plot
@@ -124,6 +137,7 @@ mixture_planner_q3 = mp.MixturePlanner(
     demand_array_MW,
     renewable_production_dict_MW,
     screening_curve_dict_CAD_MWc_yr,
+    sizing_override_array=sizing_override_array_MW,
     power_units_str="MW",
     currency_units_str="CAD"
 )

@@ -288,13 +288,13 @@ class MixturePlanner:
 
         self.capacity_price = 0
         """
-        The per-time-step fixed cost of the cheapest dispatchable technology.
+        The fixed cost of the cheapest dispatchable technology considered.
         """
 
         self.LACE_dict = 0
         """
-        A dictionary of the computed LACE values for each renewable generation
-        asset.
+        A dictionary of the capacity credit and computed LACE values for each
+        renewable generation asset.
         """
 
         return
@@ -969,9 +969,83 @@ class MixturePlanner:
         each renewable generation asset. LACE is defined for each renewable
         generation asset as
 
+        $$ \\textrm{LACE} = \\frac{\\textrm{energy revenue} + \\textrm{capacity payment}}{\\textrm{energy sold}} = \\frac{\\sum_i\\left[\\textrm{PP}_iR_i(\\Delta t)_i\\right] + P_\\textrm{capacity}\\textrm{CC}}{\\sum_i\\left[R_i(\\Delta t)_i\\right]} $$
+
+        where $\\textrm{PP}$ is pool price, $R$ is renewable generation,
+        $P_\\textrm{capacity}$ is the capacity price (taken to be the fixed
+        cost of the cheapest dispatchable technology considered), and
+        $\\textrm{CC}$ is the capacity credit. Note that capacity credit is
+        computed here as
+
+        $$ \\textrm{CC} = L_\\textrm{max} - \\textrm{max}\\left(L_i - R_i\\right) $$
+
+        where $L$ is demand (load), and $\\left(L_i - R_i\\right)$ is the
+        set of partial residuals.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+
+        #   1. compute capacity price (for each time step)
+        self.capacity_price = np.inf
+
+        for key in self.screening_curve_dict.keys():
+            if self.screening_curve_dict[key][0] < self.capacity_price:
+                self.capacity_price = self.screening_curve_dict[key][0]
+
+        #   2. init LACE dict
+        self.LACE_dict = {}
+
+        for key in self.renewable_production_dict.keys():
+            self.LACE_dict[key] = [0, 0]
+
+        #   3. populate LACE dict
+        for key in self.LACE_dict.keys():
+            annual_energy_sales = np.sum(
+                np.multiply(
+                    np.multiply(
+                        self.pool_price_array,
+                        self.renewable_production_dict[key]
+                    ),
+                    self.delta_time_array_hrs
+                )
+            )
+
+            partial_residual_load_array = (
+                self.demand_array - self.renewable_production_dict[key]
+            )
+
+            capacity_credit = (
+                np.max(self.demand_array)
+                - np.max(partial_residual_load_array)
+            )
+
+            self.LACE_dict[key][0] = capacity_credit
+
+            annual_capacity_payment = self.capacity_price * capacity_credit
+
+            self.LACE_dict[key][1] = (
+                (annual_energy_sales + annual_capacity_payment)
+                / self.production_dict[key]
+            )
+
+        return
+
+
+    def __DEPRECATED_computeLACE(self) -> None:
+        """
+        Helper method to compute levellized avoided cost of energy (LACE) for
+        each renewable generation asset. LACE is defined for each renewable
+        generation asset as
+
         $$ \\textrm{LACE} = \\frac{\\sum_i\\left[\\textrm{PP}_iR_i(\\Delta t)_i + P_\\textrm{capacity}R_i\\right]}{\\sum_iR_i(\\Delta t)_i} $$
 
-        where $\\texttt{PP}$ is pool price, $R$ is renewable generation,
+        where $\\textrm{PP}$ is pool price, $R$ is renewable generation,
         and $P_\\textrm{capacity}$ is the capacity price (taken to be the fixed
         cost of the cheapest dispatchable technology available).
 
@@ -1613,8 +1687,7 @@ class MixturePlanner:
             "{}/{}".format(
                 self.currency_units_str,
                 self.power_units_str
-            ),
-            "(for each hour)"
+            )
         )
 
         #   9. LACE
@@ -1625,9 +1698,12 @@ class MixturePlanner:
             for key in self.LACE_dict.keys():
                 print(
                     "\t",
-                    key, 
-                    ":",
-                    str(round(self.LACE_dict[key], 3)),
+                    key,
+                    "(capacity credit = {} {}):".format(
+                        round(self.LACE_dict[key][0], 3),
+                        self.power_units_str
+                    ),
+                    str(round(self.LACE_dict[key][1], 3)),
                     "{}/{}h".format(
                         self.currency_units_str,
                         self.power_units_str
@@ -1971,7 +2047,6 @@ if __name__ == "__main__":
     assert(
         test_mixture_planner.capacity_price == (
             test_screening_curve_dict_CAD_MWc_yr["Gas"][0]
-            / HOURS_PER_YEAR
         )
     )
 
