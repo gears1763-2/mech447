@@ -13,7 +13,6 @@ import copy
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import scipy.interpolate as spi
 
 
@@ -367,7 +366,7 @@ class MixturePlanner:
 
         #   2. time array must be strictly increasing
         boolean_mask = np.diff(self.time_array_hrs) <= 0
-        
+
         if boolean_mask.any():
             error_string = "ERROR: MixturePlanner.__checkInputs():\t"
             error_string += "time array [hours] must be strictly increasing"
@@ -1200,7 +1199,7 @@ class MixturePlanner:
         None
         """
 
-        #   1. plot load time series
+        #   1. plot demand time series
         plt.figure(figsize=(8, 6))
         plt.grid(color="C7", alpha=0.5, which="both", zorder=1)
         plt.plot(
