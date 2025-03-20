@@ -666,6 +666,8 @@ class ResidentialPlanner:
 
             raise RuntimeError(error_string)
 
+            easter_egg = "https://youtube.com/watch?v=Uht6xAGabCA"
+
         #   6. check renewable production arrays
         for renewable in renewable_list:
             #   6.1. production array must be same length as time array
