@@ -33,6 +33,24 @@ the following sub-directories:
 --------
 
 
+## Tutorial Videos
+
+To help with getting up to speed with this package, a series of tutorial videos
+has been provided:
+
+  * Tutorial 1: <https://youtu.be/ThVEBJksYDU>
+
+  * Tutorial 2: <https://youtu.be/MVXbBcfIJ9Q>
+
+  * Tutorial 3: <https://youtu.be/prYfbBMlF2c>
+
+These videos do assume *some* basic knowledge of Python. That said, there are
+many, many free resources for learning Python. For example, check out the
+offerings from the Python Institute <https://pythoninstitute.org/study-resources>.
+
+--------
+
+
 ## Autodocumentation
 
 Autodocumentation for this project is achieved using `pdoc` (see
